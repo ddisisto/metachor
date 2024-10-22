@@ -65,23 +65,47 @@ async def run_chat(
                 max_time=max_time
             )
             
-            # Send the prompt (initialization is handled internally)
             log.info("Processing request...")
             start_time = time.time()
-            response = await ensemble.send(
-                prompt, 
-                constraints,
-                include_initialization=True  # Explicitly enable initialization
-            )
-            elapsed = time.time() - start_time
             
-            # Display results
-            console.print("\n[bold green]Final Response:\n===== ========[/bold green]")
-            console.print(response)
-            console.print(f"\n[dim]Completed in {elapsed:.2f} seconds[/dim]")
-            
+            try:
+                response = await ensemble.send(
+                    prompt, 
+                    constraints,
+                    include_initialization=True
+                )
+                elapsed = time.time() - start_time
+                
+                # Display results
+                console.print("\n[bold green]Response:[/bold green]")
+                console.print(response)
+                console.print(f"\n[dim]Completed in {elapsed:.2f} seconds[/dim]")
+                
+            except asyncio.TimeoutError:
+                console.print("\n[yellow]Response timed out, but partial results may be available[/yellow]")
+                # Try to get partial results if available
+                partial_response = ensemble._format_final_response(ensemble._get_all_responses())
+                if partial_response:
+                    console.print(partial_response)
+                    
+            except asyncio.CancelledError:
+                console.print("\n[yellow]Operation was cancelled, but partial results may be available[/yellow]")
+                partial_response = ensemble._format_final_response(ensemble._get_all_responses())
+                if partial_response:
+                    console.print(partial_response)
+                    
+            except Exception as e:
+                if log.getEffectiveLevel() <= logging.DEBUG:
+                    log.exception("Detailed error during chat:")
+                else:
+                    log.error(f"Error during chat: {str(e)}")
+                raise
+                
     except Exception as e:
-        log.error(f"Error during chat: {str(e)}", exc_info=True)
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.exception("Failed to complete chat:")
+        else:
+            log.error(f"Failed to complete chat: {str(e)}")
         raise typer.Exit(code=1)
 
 @app.command()

@@ -23,8 +23,8 @@ class Ensemble:
     
     # Updated phase budgets to include initialization
     PHASE_BUDGETS = {
-        Phase.INITIALIZATION: {"time": 0.1, "tokens": 0.1},  # 10% each for init
-        Phase.USER_ANALYSIS: {"time": 0.2, "tokens": 0.2},   # 20% each for analysis
+        Phase.INITIALIZATION: {"time": 0.1, "tokens": 0.15},  # 15% each for init
+        Phase.USER_ANALYSIS: {"time": 0.2, "tokens": 0.15},   # 15% each for analysis
         Phase.RESPONSE_PLANNING: {"time": 0.2, "tokens": 0.2}, # 20% each for planning
         Phase.RESPONSE_DRAFTING: {"time": 0.4, "tokens": 0.4}, # 40% each for drafting
         Phase.RESPONSE_REFINING: {"time": 0.1, "tokens": 0.1}  # 10% each for refinement
@@ -52,14 +52,15 @@ class Ensemble:
         
         log.info(f"\n⏱️ Phase {phase.value} budget - Time: {time_budget:.1f}s, Tokens: {token_budget}")
         
-        # Build contextual prompt
         phase_prompt = (
             f"{self.PHASE_CONTEXTS[phase]}:\n\n"
             f"{context + '\n\n' if context else ''}"
             f"{content}"
         )
         
+        tasks = []
         try:
+            # Create tasks for each voice
             tasks = [
                 asyncio.create_task(
                     voice.send(
@@ -91,11 +92,29 @@ class Ensemble:
             
         except asyncio.TimeoutError:
             log.warning(f"⚠️ Phase {phase.value} timed out after {time_budget:.1f}s")
-            # Return any completed responses before timeout
-            completed_responses = [t.result() for t in tasks if t.done()]
+            # Safely handle any completed responses
+            completed_responses = []
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+                else:
+                    try:
+                        completed_responses.append(t.result())
+                    except Exception as e:
+                        log.warning(f"Error retrieving completed response: {str(e)}")
+            
             if completed_responses:
                 self._phase_responses[phase].extend(completed_responses)
+                
             return completed_responses
+            
+        except Exception as e:
+            # Cancel any running tasks
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            log.error(f"Error in phase {phase.value}: {str(e)}")
+            raise
 
     async def send(
         self, 
@@ -179,38 +198,37 @@ class Ensemble:
         return all_responses
 
     def _format_final_response(self, responses: list[Message]) -> str:
-        """Format the final response with all available content."""
+        """Format the final response by model."""
         if not responses:
-            # Try to salvage content from any phase
-            responses = self._get_all_responses()
-            if not responses:
-                return "No response generated within resource constraints."
+            return "No response generated within resource constraints."
         
-        # Combine responses meaningfully
-        contents = []
-        seen_content = set()  # Track unique content
+        # Get the final drafting phase responses
+        draft_responses = [r for r in self._phase_responses[Phase.RESPONSE_DRAFTING]]
+        if not draft_responses:
+            draft_responses = responses  # Fallback to all responses if no drafts
+            
+        # Format each model's response
+        formatted_responses = []
+        for response in draft_responses:
+            model_stats = (
+                f"\n[ Model: {response.from_model} | "
+                f"Tokens: {response.tokens_used} ]"
+            )
+            formatted_responses.append(
+                f"{model_stats}\n"
+                f"{'─' * 80}\n"
+                f"{response.content.strip()}\n"
+            )
+            
+        # Add overall stats footer
+        total_time = time.time() - self._start_time
+        footer = (
+            f"\n{'─' * 80}\n"
+            f"Total time: {total_time:.1f}s | "
+            f"Total tokens: {self._total_tokens}"
+        )
         
-        for r in responses:
-            content = r.content.strip()
-            # Simple deduplication
-            if content and content not in seen_content:
-                contents.append(content)
-                seen_content.add(content)
-        
-        response = "\n\n".join(contents)
-        
-        # Add metadata
-        metadata = [
-            f"\n---",
-            f"Time usage: {time.time() - self._start_time:.2f}s",
-            f"Total tokens: {self._total_tokens}",
-            "Token usage by phase:"
-        ]
-        for phase, tokens in self._phase_tokens.items():
-            if tokens > 0:
-                metadata.append(f"- {phase.value}: {tokens} tokens")
-        
-        return f"{response.strip()}\n{''.join(metadata)}"
+        return "\n".join(formatted_responses) + footer
 
     def _get_next_voice(self, current_voice: Voice) -> Voice:
         """Get the next voice in rotation, with error handling.
