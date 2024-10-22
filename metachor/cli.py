@@ -65,18 +65,18 @@ async def run_chat(
                 max_time=max_time
             )
             
-            # Initialize the ensemble's meta-discussion
-            log.info("Initializing meta-discussion...")
-            await ensemble.initialize_meta_discussion()
-            
-            # Send the actual prompt
-            log.info("Sending prompt...")
+            # Send the prompt (initialization is handled internally)
+            log.info("Processing request...")
             start_time = time.time()
-            response = await ensemble.send(prompt, constraints)
+            response = await ensemble.send(
+                prompt, 
+                constraints,
+                include_initialization=True  # Explicitly enable initialization
+            )
             elapsed = time.time() - start_time
             
             # Display results
-            console.print("\n[bold green]Response:[/bold green]")
+            console.print("\n[bold green]Final Response:\n===== ========[/bold green]")
             console.print(response)
             console.print(f"\n[dim]Completed in {elapsed:.2f} seconds[/dim]")
             
@@ -87,27 +87,13 @@ async def run_chat(
 @app.command()
 def chat(
     prompt: Annotated[str, typer.Argument(help="The prompt to send to the ensemble")],
-    models: Annotated[list[str], typer.Option(
-        "--model", "-m", 
-        help="Model identifiers (can be specified multiple times)"
-    )] = ["mistralai/ministral-8b", "liquid/lfm-40b"],            # Cheap / diverse ones selected by daniel
-    # ["anthropic/claude-3-opus", "openai/gpt-4-turbo-preview"],  # Defaults suggested by claude
-    max_tokens: Annotated[int, typer.Option(
-        "--max-tokens", "-t",
-        help="Maximum tokens in response"
-    )] = 1000,
-    max_time: Annotated[float, typer.Option(
-        "--max-time", 
-        help="Maximum time in seconds"
-    )] = 30.0,
-    verbose: Annotated[bool, typer.Option(
-        "--verbose", "-v",
-        help="Enable verbose logging"
-    )] = False,
+    models: Annotated[list[str], typer.Option("--model", "-m")] = ["mistralai/ministral-8b", "liquid/lfm-40b"],
+    max_tokens: Annotated[int, typer.Option("--max-tokens", "-t")] = 1000,
+    max_time: Annotated[float, typer.Option("--max-time")] = 30.0,
+    skip_init: Annotated[bool, typer.Option("--skip-init")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ):
-    """
-    Send a prompt to the ensemble and get a collaborative response.
-    """
+    """Send a prompt to the ensemble and get a collaborative response."""
     if verbose:
         log.setLevel(logging.DEBUG)
     

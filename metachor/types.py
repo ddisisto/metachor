@@ -4,11 +4,11 @@ from enum import Enum
 
 class Phase(Enum):
     """Phases of the collaborative response generation process."""
-    INITIALIZATION = "initialization"  # Initial meta-discussion about nature/roles
-    USER_ANALYSIS = "user_analysis"    # Analyzing user request and constraints
-    RESPONSE_PLANNING = "planning"     # Planning optimal response approach
-    RESPONSE_DRAFTING = "drafting"     # Iteratively developing response
-    RESPONSE_REFINING = "refining"     # Final refinements and optimization
+    INITIALIZATION = "initialization"  # Initial coordination between models
+    USER_ANALYSIS = "user_analysis"    # Analyzing user request
+    RESPONSE_PLANNING = "planning"     # Planning the approach
+    RESPONSE_DRAFTING = "drafting"     # Generating response
+    RESPONSE_REFINING = "refining"     # Final refinements
 
 @dataclass
 class ResourceConstraints:
