@@ -29,7 +29,7 @@ app = typer.Typer(help="metachor - Cognition in concert")
 # Load environment variables
 load_dotenv()
 
-def create_ensemble(models: list[str], system_prompt: str | None = None) -> Ensemble:
+def create_ensemble(models: list[str]) -> Ensemble:  # Remove system_prompt parameter
     """Create an ensemble from a list of model IDs."""
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
@@ -43,12 +43,11 @@ def create_ensemble(models: list[str], system_prompt: str | None = None) -> Ense
         voice = Voice(
             model_id=model,
             api_key=api_key,
-            system_prompt=system_prompt,
             max_tokens=1000  # Maybe make this configurable
         )
         voices.append(voice)
     
-    return Ensemble(voices, system_prompt)
+    return Ensemble(voices)
 
 async def run_chat(
     ensemble: Ensemble,
@@ -121,13 +120,8 @@ def chat(
     if verbose:
         log.setLevel(logging.DEBUG)
     
-    # Basic system prompt - we could make this configurable
-    system_prompt = """You are part of an ensemble of AI models working together to provide
-    comprehensive and thoughtful responses. Collaborate with your peers, building on each
-    other's insights while maintaining a coherent narrative."""
-    
     try:
-        ensemble = create_ensemble(models, system_prompt)
+        ensemble = create_ensemble(models)
         asyncio.run(run_chat(ensemble, prompt, max_tokens, max_time))
     except Exception as e:
         log.error(f"Failed to initialize ensemble: {str(e)}", exc_info=True)
@@ -145,11 +139,8 @@ def direct(
     if verbose:
         log.setLevel(logging.DEBUG)
     
-    # Minimal system prompt for direct mode
-    system_prompt = "You are a helpful AI assistant. Please provide direct, accurate responses."
-    
     try:
-        ensemble = create_ensemble(models, system_prompt)
+        ensemble = create_ensemble(models)
         asyncio.run(run_direct(ensemble, prompt, max_tokens, max_time))
     except Exception as e:
         log.error(f"Failed to initialize direct mode: {str(e)}", exc_info=True)

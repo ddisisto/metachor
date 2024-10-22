@@ -1,14 +1,22 @@
-# metachor/types.py
 from dataclasses import dataclass
 from enum import Enum
 
 class Phase(Enum):
     """Phases of the collaborative response generation process."""
-    INITIALIZATION = "initialization"  # Initial coordination between models
-    USER_ANALYSIS = "user_analysis"    # Analyzing user request
-    RESPONSE_PLANNING = "planning"     # Planning the approach
-    RESPONSE_DRAFTING = "drafting"     # Generating response
-    RESPONSE_REFINING = "refining"     # Final refinements
+    INITIALIZATION = "initialization"
+    USER_ANALYSIS = "user_analysis"
+    RESPONSE_PLANNING = "planning"
+    RESPONSE_DRAFTING = "drafting"
+    RESPONSE_REFINING = "refining"
+
+# Define phase contexts at the type level since they're intrinsic to the phases
+PHASE_CONTEXTS = {
+    Phase.INITIALIZATION: "Briefly acknowledge other models and confirm readiness",
+    Phase.USER_ANALYSIS: "What are the key aspects of this request we need to address?",
+    Phase.RESPONSE_PLANNING: "What's the most effective way to structure our response?",
+    Phase.RESPONSE_DRAFTING: "Generate the response following our plan",
+    Phase.RESPONSE_REFINING: "Review and improve the drafted response"
+}
 
 @dataclass
 class ResourceConstraints:

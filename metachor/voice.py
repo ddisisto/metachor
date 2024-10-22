@@ -1,26 +1,26 @@
 # metachor/voice.py
 from typing import Optional
 import httpx
-import asyncio
-from metachor.types import Message, Phase
+from metachor.types import Phase, PHASE_CONTEXTS, Message
 import logging
 
 log = logging.getLogger("metachor")
 
+
 class Voice:
     """Represents a single LLM in the ensemble, handling its interactions and state."""
-    
     def __init__(self, 
-                 model_id: str,
-                 api_key: str,
-                 system_prompt: str | None = None,
-                 max_tokens: int = 1000):
+                model_id: str,
+                api_key: str,
+                direct_prompt: str | None = None,
+                collaborative_prompt: str | None = None,
+                max_tokens: int = 1000):
         self.model_id = model_id
         self.api_key = api_key
-        self.system_prompt = system_prompt
+        self.direct_prompt = direct_prompt
+        self.collaborative_prompt = collaborative_prompt
         self.max_tokens = max_tokens
         self.conversation_history: list[Message] = []
-        # Instead of creating the client here, we'll create it for each request
         self.headers = {
             "Authorization": f"Bearer {api_key}",
             "HTTP-Referer": "https://github.com/ddisisto/metachor",
@@ -84,10 +84,20 @@ class Voice:
         """Prepare messages for the API call."""
         messages = []
         
-        if self.system_prompt:
+        # Choose appropriate prompt based on mode
+        if context:  # Collaborative mode
+            current_phase = context[-1].phase if context else Phase.INITIALIZATION
+            system_content = self.collaborative_prompt.format(
+                phase=current_phase.value,
+                phase_context=PHASE_CONTEXTS[current_phase]
+            )
+        else:  # Direct mode
+            system_content = self.direct_prompt
+            
+        if system_content:
             messages.append({
                 "role": "system",
-                "content": self.system_prompt
+                "content": system_content
             })
             
         if context:

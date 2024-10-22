@@ -1,9 +1,9 @@
 # metachor/ensemble.py
-from metachor.types import Phase, ResourceConstraints, Message
-from metachor.voice import Voice
 import asyncio
 import time
 import logging
+from metachor.types import Phase, PHASE_CONTEXTS, ResourceConstraints, Message
+from metachor.voice import Voice
 
 log = logging.getLogger("metachor")
 
@@ -12,32 +12,49 @@ class PhaseTimeoutError(Exception):
     pass
 
 class Ensemble:
-    # Updated phase contexts to include initialization
-    PHASE_CONTEXTS = {
-        Phase.INITIALIZATION: "Discuss how we can best work together as an ensemble of models",
-        Phase.USER_ANALYSIS: "Analyze the key aspects and requirements of this user request",
-        Phase.RESPONSE_PLANNING: "Based on our analysis, create a structured plan for the response",
-        Phase.RESPONSE_DRAFTING: "Following our plan, generate a coherent response",
-        Phase.RESPONSE_REFINING: "Refine and improve the drafted response while maintaining coherence"
-    }
+    # Define clear, specific prompts for different modes
+    DIRECT_PROMPT = """You are {model_id}. When answering, be direct and accurate. 
+    No role-playing or elaborate explanations unless specifically requested."""
+
+    COLLABORATIVE_PROMPT = """You are {model_id}, part of a small ensemble of language models 
+    working together. Your collaborators are: {other_models}.
+
+    Guidelines:
+    1. Be aware of your specific identity as {model_id}
+    2. Acknowledge your collaborators when relevant
+    3. Focus on clear, factual contributions
+    4. Build on others' insights without unnecessary elaboration
+    5. Stay on task - avoid inventing fictional systems or roles
     
-    # Updated phase budgets to include initialization
+    Current phase: {phase}
+    Phase goal: {phase_context}"""
+
     PHASE_BUDGETS = {
-        Phase.INITIALIZATION: {"time": 0.1, "tokens": 0.15},  # 15% each for init
-        Phase.USER_ANALYSIS: {"time": 0.2, "tokens": 0.15},   # 15% each for analysis
+        Phase.INITIALIZATION: {"time": 0.15, "tokens": 0.15},  # 15% each for init
+        Phase.USER_ANALYSIS: {"time": 0.15, "tokens": 0.15},   # 15% each for analysis
         Phase.RESPONSE_PLANNING: {"time": 0.2, "tokens": 0.2}, # 20% each for planning
         Phase.RESPONSE_DRAFTING: {"time": 0.4, "tokens": 0.4}, # 40% each for drafting
         Phase.RESPONSE_REFINING: {"time": 0.1, "tokens": 0.1}  # 10% each for refinement
     }
-    
-    def __init__(self, voices: list[Voice], system_prompt: str | None = None):
+    def __init__(self, voices: list[Voice]):
         self.voices = voices
-        self.system_prompt = system_prompt
-        self.conversation_history: list[Message] = []
         self._start_time = None
         self._total_tokens = 0
-        self._phase_tokens: dict[Phase, int] = {phase: 0 for phase in Phase}
-        self._phase_responses: dict[Phase, list[Message]] = {phase: [] for phase in Phase}
+        self._phase_tokens = {phase: 0 for phase in Phase}
+        self._phase_responses = {phase: [] for phase in Phase}
+
+        # Update each voice's system prompt
+        for voice in voices:
+            other_models = [v.model_id for v in voices if v != voice]
+            voice.direct_prompt = self.DIRECT_PROMPT.format(
+                model_id=voice.model_id
+            )
+            voice.collaborative_prompt = self.COLLABORATIVE_PROMPT.format(
+                model_id=voice.model_id,
+                other_models=", ".join(other_models),
+                phase="{phase}",  # Will be formatted per-request
+                phase_context="{phase_context}"  # Will be formatted per-request
+            )
 
     async def _run_phase_with_timeout(
         self, 
@@ -53,7 +70,7 @@ class Ensemble:
         log.info(f"\n⏱️ Phase {phase.value} budget - Time: {time_budget:.1f}s, Tokens: {token_budget}")
         
         phase_prompt = (
-            f"{self.PHASE_CONTEXTS[phase]}:\n\n"
+            f"{PHASE_CONTEXTS[phase]}:\n\n"
             f"{context + '\n\n' if context else ''}"
             f"{content}"
         )
