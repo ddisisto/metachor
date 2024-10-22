@@ -27,12 +27,15 @@ class Voice:
             "X-Title": "metachor"
         }
 
-    async def send(self, 
-                  content: str,
-                  to_model: str,
-                  phase: Phase,
-                  context: list[Message] | None = None) -> Message:
-        """Generate a response to the given content."""
+    async def send(
+        self,
+        content: str,
+        to_model: str,
+        phase: Phase,
+        max_tokens: Optional[int] = None,
+        context: Optional[list[Message]] = None
+    ) -> Message:
+        """Generate a response to the given content with token budget."""
         messages = self._prepare_messages(content, context)
         
         log.debug(f"\n{'='*50}")
@@ -44,12 +47,12 @@ class Voice:
             async with httpx.AsyncClient(
                 base_url="https://openrouter.ai/api/v1",
                 headers=self.headers,
-                timeout=30.0  # Added explicit timeout
+                timeout=30.0
             ) as client:
                 request_body = {
                     "model": self.model_id,
                     "messages": messages,
-                    "max_tokens": self.max_tokens
+                    "max_tokens": max_tokens or self.max_tokens
                 }
                 log.debug(f"Request: {request_body}")
                 
@@ -57,7 +60,6 @@ class Voice:
                 response.raise_for_status()
                 data = response.json()
                 
-                # Extract content and token usage
                 response_content = data["choices"][0]["message"]["content"]
                 tokens_used = data["usage"]["total_tokens"]
                 prompt_tokens = data["usage"].get("prompt_tokens", 0)

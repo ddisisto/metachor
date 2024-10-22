@@ -1,7 +1,6 @@
 # metachor/types.py
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional
 
 class Phase(Enum):
     """Phases of the collaborative response generation process."""
