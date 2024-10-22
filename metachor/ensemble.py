@@ -172,6 +172,44 @@ class Ensemble:
             log.error(f"❌ Error during response generation: {str(e)}")
             return self._format_final_response(self._get_all_responses())   
 
+    async def send_direct(
+        self,
+        user_input: str,
+        constraints: ResourceConstraints,
+    ) -> str:
+        """Get direct responses from each model without collaboration."""
+        self._start_time = time.time()
+        self._total_tokens = 0
+        
+        log.info(f"\n📥 Direct mode - Processing user input: {user_input}")
+        log.info(f"Constraints: {constraints}")
+        
+        try:
+            # Create tasks for direct responses from each voice
+            tasks = [
+                asyncio.create_task(
+                    voice.send(
+                        content=user_input,
+                        to_model="direct",  # Special marker for direct mode
+                        phase=Phase.RESPONSE_DRAFTING,
+                        max_tokens=constraints.max_tokens // len(self.voices)
+                    )
+                )
+                for voice in self.voices
+            ]
+            
+            # Wait for all responses with overall timeout
+            responses = await asyncio.wait_for(
+                asyncio.gather(*tasks),
+                timeout=constraints.max_time
+            )
+            
+            return self._format_final_response(responses)
+            
+        except Exception as e:
+            log.error(f"❌ Error during direct response generation: {str(e)}")
+            return "Failed to generate direct responses."
+
     def _summarize_responses(self, responses: list[Message]) -> str:
         """Extract key points from responses into a concise summary."""
         if not responses:

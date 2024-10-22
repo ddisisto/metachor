@@ -134,6 +134,59 @@ def chat(
         raise typer.Exit(code=1)
 
 @app.command()
+def direct(
+    prompt: Annotated[str, typer.Argument(help="The prompt to send directly to each model")],
+    models: Annotated[list[str], typer.Option("--model", "-m")] = ["mistralai/ministral-8b", "liquid/lfm-40b"],
+    max_tokens: Annotated[int, typer.Option("--max-tokens", "-t")] = 1000,
+    max_time: Annotated[float, typer.Option("--max-time")] = 30.0,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+):
+    """Send a prompt directly to each model without collaboration."""
+    if verbose:
+        log.setLevel(logging.DEBUG)
+    
+    # Minimal system prompt for direct mode
+    system_prompt = "You are a helpful AI assistant. Please provide direct, accurate responses."
+    
+    try:
+        ensemble = create_ensemble(models, system_prompt)
+        asyncio.run(run_direct(ensemble, prompt, max_tokens, max_time))
+    except Exception as e:
+        log.error(f"Failed to initialize direct mode: {str(e)}", exc_info=True)
+        raise typer.Exit(code=1)
+
+async def run_direct(
+    ensemble: Ensemble,
+    prompt: str,
+    max_tokens: int,
+    max_time: float
+) -> None:
+    """Run direct interactions with each model and display results."""
+    try:
+        with console.status("Processing direct responses...", spinner="dots"):
+            constraints = ResourceConstraints(
+                max_tokens=max_tokens,
+                max_iterations=1,  # Direct mode only needs one iteration
+                max_time=max_time
+            )
+            
+            start_time = time.time()
+            response = await ensemble.send_direct(prompt, constraints)
+            elapsed = time.time() - start_time
+            
+            # Display results
+            console.print("\n[bold green]Direct Responses:[/bold green]")
+            console.print(response)
+            console.print(f"\n[dim]Completed in {elapsed:.2f} seconds[/dim]")
+            
+    except Exception as e:
+        if log.getEffectiveLevel() <= logging.DEBUG:
+            log.exception("Failed to complete direct mode:")
+        else:
+            log.error(f"Failed to complete direct mode: {str(e)}")
+        raise typer.Exit(code=1)
+
+@app.command()
 def list_models():
     """List available models from OpenRouter."""
     api_key = os.getenv("OPENROUTER_API_KEY")
