@@ -4,6 +4,10 @@ from metachor.voice import Voice
 import asyncio
 import time
 
+import logging
+
+log = logging.getLogger("metachor")
+
 class Ensemble:
     """A collaborative system of multiple LLMs working together to generate responses."""
     
@@ -20,10 +24,11 @@ class Ensemble:
 
     async def initialize_meta_discussion(self, iterations: int = 3) -> None:
         """Initial phase where models discuss their roles and communication protocol."""
+        log.info(f"\n🚀 Starting meta-discussion with {len(self.voices)} models")
         seed_question = "How should we work together to best serve users? What are our unique strengths?"
         
         for i in range(iterations):
-            # We could make this concurrent, but sequential might be better for the discussion flow
+            log.info(f"\n📝 Meta-discussion iteration {i+1}/{iterations}")
             for voice in self.voices:
                 next_voice = self._get_next_voice(voice)
                 response = await voice.send(
@@ -33,20 +38,26 @@ class Ensemble:
                     phase=Phase.INITIALIZATION
                 )
                 self.conversation_history.append(response)
+                log.debug(f"Meta-discussion history length: {len(self.conversation_history)}")
 
     async def send(self, user_input: str, constraints: ResourceConstraints) -> str:
         """Process user request through multi-model collaboration."""
         start_time = time.time()
         tokens_used = 0
         iterations = 0
+        
+        log.info(f"\n📥 Processing user input: {user_input}")
+        log.info(f"Constraints: {constraints}")
 
-        # Phase 1 & 2: Analysis and Planning - these are sequential by design
+        # Phase 1 & 2: Analysis and Planning
+        log.info("\n🔍 Starting analysis phase")
         await self._collaborate_phase(
             phase=Phase.USER_ANALYSIS,
             context=f"User request: {user_input}\nConstraints: {constraints}",
             iterations=2
         )
         
+        log.info("\n📋 Starting planning phase")
         await self._collaborate_phase(
             phase=Phase.RESPONSE_PLANNING,
             context="Based on our analysis, how should we structure the response?",
@@ -54,16 +65,22 @@ class Ensemble:
         )
 
         # Phase 3: Iterative response development
+        log.info("\n✍️ Starting response generation")
         draft_response = ""
+        
         while (iterations < constraints.max_iterations and 
                tokens_used < constraints.max_tokens and
                time.time() - start_time < constraints.max_time):
             
             phase = Phase.RESPONSE_DRAFTING
-            if tokens_used > constraints.max_tokens * 0.7:  # Switch to refinement (TODO: make this tunable)
+            if tokens_used > constraints.max_tokens * 0.7:
                 phase = Phase.RESPONSE_REFINING
+                log.info("\n🔄 Switching to refinement phase")
             
-            # Here we could potentially run voices concurrently
+            log.info(f"\n📝 Generation iteration {iterations + 1}/{constraints.max_iterations}")
+            log.debug(f"Current tokens: {tokens_used}/{constraints.max_tokens}")
+            log.debug(f"Time elapsed: {time.time() - start_time:.2f}s/{constraints.max_time}s")
+            
             responses = await asyncio.gather(*[
                 voice.send(
                     content=draft_response if draft_response else user_input,
@@ -80,8 +97,10 @@ class Ensemble:
                 iterations += 1
                 
                 if self._is_response_complete(draft_response, constraints):
+                    log.info("\n✅ Response complete")
                     break
 
+        log.info(f"\n🏁 Generation complete - {iterations} iterations, {tokens_used} tokens, {time.time() - start_time:.2f}s")
         return self._format_final_response(draft_response)
 
     async def _collaborate_phase(self, phase: Phase, context: str, iterations: int) -> None:
