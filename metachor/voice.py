@@ -1,4 +1,7 @@
 # metachor/voice.py
+from typing import Optional
+import httpx
+import asyncio
 from metachor.types import Message, Phase
 
 class Voice:
@@ -6,71 +9,86 @@ class Voice:
     
     def __init__(self, 
                  model_id: str,
+                 api_key: str,
                  system_prompt: str | None = None,
                  max_tokens: int = 1000):
         self.model_id = model_id
+        self.api_key = api_key
         self.system_prompt = system_prompt
         self.max_tokens = max_tokens
         self.conversation_history: list[Message] = []
-
-    def send(self, 
-            content: str,
-            to_model: str,
-            phase: Phase,
-            context: list[Message] | None = None) -> Message:
-        """Generate a response to the given content.
-        
-        Args:
-            content: The message to respond to
-            to_model: ID of the model this response is directed to
-            phase: Current phase of the conversation
-            context: Optional additional context messages
-            
-        Returns:
-            Generated message with response
-        """
-        # TODO: Implement actual LLM call
-        # For now, return dummy message
-        return Message(
-            content="Placeholder response",
-            tokens_used=0,
-            from_model=self.model_id,
-            to_model=to_model,
-            phase=phase
+        self.client = httpx.AsyncClient(
+            base_url="https://openrouter.ai/api/v1",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://github.com/yourusername/metachor",  # Required by OpenRouter
+                "X-Title": "metachor"  # Optional but good practice
+            }
         )
-    
-    def prepare_prompt(self, 
-                      content: str, 
-                      context: list[Message] | None = None) -> str:
-        """Prepare the prompt for the LLM including relevant context.
+
+    async def send(self, 
+                  content: str,
+                  to_model: str,
+                  phase: Phase,
+                  context: list[Message] | None = None) -> Message:
+        """Generate a response to the given content."""
+        messages = self._prepare_messages(content, context)
         
-        Args:
-            content: The current message to respond to
-            context: Optional additional context messages
-            
-        Returns:
-            Formatted prompt string
-        """
+        try:
+            async with self.client:
+                response = await self.client.post(
+                    "/chat/completions",
+                    json={
+                        "model": self.model_id,
+                        "messages": messages,
+                        "max_tokens": self.max_tokens
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract content and token usage
+                response_content = data["choices"][0]["message"]["content"]
+                tokens_used = data["usage"]["total_tokens"]
+                
+                return Message(
+                    content=response_content,
+                    tokens_used=tokens_used,
+                    from_model=self.model_id,
+                    to_model=to_model,
+                    phase=phase
+                )
+                
+        except httpx.HTTPError as e:
+            # In production we'd want more sophisticated error handling
+            raise RuntimeError(f"API call failed: {e}")
+
+    def _prepare_messages(self, 
+                         content: str, 
+                         context: list[Message] | None = None) -> list[dict]:
+        """Prepare messages for the API call."""
         messages = []
         
         if self.system_prompt:
-            messages.append(f"System: {self.system_prompt}")
+            messages.append({
+                "role": "system",
+                "content": self.system_prompt
+            })
             
         if context:
-            # Add relevant context messages, possibly with some filtering/selection
             for msg in context:
-                messages.append(
-                    f"From {msg.from_model} to {msg.to_model}: {msg.content}"
-                )
+                messages.append({
+                    "role": "assistant" if msg.from_model == self.model_id else "user",
+                    "content": f"[{msg.from_model} → {msg.to_model}] {msg.content}"
+                })
         
-        messages.append(f"Current message: {content}")
-        return "\n\n".join(messages)
-    
-    def count_tokens(self, text: str) -> int:
-        """Count tokens in the given text. To be implemented with actual tokenizer."""
-        # TODO: Implement actual token counting
-        return len(text.split())  # Naive approximation for now
-    
-    def forget_history(self) -> None:
+        messages.append({
+            "role": "user",
+            "content": content
+        })
+        
+        return messages
+
+    async def forget_history(self) -> None:
         """Clear conversation history."""
         self.conversation_history.clear()

@@ -1,6 +1,7 @@
 # metachor/ensemble.py
 from metachor.types import Phase, ResourceConstraints, Message
 from metachor.voice import Voice
+import asyncio
 import time
 
 class Ensemble:
@@ -16,42 +17,42 @@ class Ensemble:
         self.voices = voices
         self.system_prompt = system_prompt
         self.conversation_history: list[Message] = []
-        
-    def initialize_meta_discussion(self, iterations: int = 3) -> None:
+
+    async def initialize_meta_discussion(self, iterations: int = 3) -> None:
         """Initial phase where models discuss their roles and communication protocol."""
         seed_question = "How should we work together to best serve users? What are our unique strengths?"
         
         for i in range(iterations):
+            # We could make this concurrent, but sequential might be better for the discussion flow
             for voice in self.voices:
                 next_voice = self._get_next_voice(voice)
-                response = voice.send(
+                response = await voice.send(
                     content=seed_question,
                     to_model=next_voice.model_id,
                     context=self.conversation_history,
                     phase=Phase.INITIALIZATION
                 )
                 self.conversation_history.append(response)
-    
-    def send(self, user_input: str, constraints: ResourceConstraints) -> str:
+
+    async def send(self, user_input: str, constraints: ResourceConstraints) -> str:
         """Process user request through multi-model collaboration."""
         start_time = time.time()
         tokens_used = 0
         iterations = 0
-        
-        # Phase 1: Models analyze user request and constraints
-        self._collaborate_phase(
+
+        # Phase 1 & 2: Analysis and Planning - these are sequential by design
+        await self._collaborate_phase(
             phase=Phase.USER_ANALYSIS,
             context=f"User request: {user_input}\nConstraints: {constraints}",
             iterations=2
         )
         
-        # Phase 2: Models plan response approach
-        self._collaborate_phase(
+        await self._collaborate_phase(
             phase=Phase.RESPONSE_PLANNING,
             context="Based on our analysis, how should we structure the response?",
             iterations=2
         )
-        
+
         # Phase 3: Iterative response development
         draft_response = ""
         while (iterations < constraints.max_iterations and 
@@ -59,39 +60,43 @@ class Ensemble:
                time.time() - start_time < constraints.max_time):
             
             phase = Phase.RESPONSE_DRAFTING
-            if tokens_used > constraints.max_tokens * 0.7:  # Switch to refinement
+            if tokens_used > constraints.max_tokens * 0.7:  # Switch to refinement (TODO: make this tunable)
                 phase = Phase.RESPONSE_REFINING
             
-            for voice in self.voices:
-                next_voice = self._get_next_voice(voice)
-                response = voice.send(
+            # Here we could potentially run voices concurrently
+            responses = await asyncio.gather(*[
+                voice.send(
                     content=draft_response if draft_response else user_input,
-                    to_model=next_voice.model_id,
+                    to_model=self._get_next_voice(voice).model_id,
                     context=self.conversation_history,
                     phase=phase
                 )
+                for voice in self.voices
+            ])
+            
+            for response in responses:
                 draft_response = self._integrate_response(draft_response, response)
                 tokens_used += response.tokens_used
                 iterations += 1
                 
                 if self._is_response_complete(draft_response, constraints):
                     break
-        
+
         return self._format_final_response(draft_response)
-    
-    def _collaborate_phase(self, phase: Phase, context: str, iterations: int) -> None:
+
+    async def _collaborate_phase(self, phase: Phase, context: str, iterations: int) -> None:
         """Run a collaboration phase between models."""
         for _ in range(iterations):
             for voice in self.voices:
                 next_voice = self._get_next_voice(voice)
-                response = voice.send(
+                response = await voice.send(
                     content=context,
                     to_model=next_voice.model_id,
                     context=self.conversation_history,
                     phase=phase
                 )
                 self.conversation_history.append(response)
-    
+
     def _get_next_voice(self, current_voice: Voice) -> Voice:
         """Get the next voice in rotation."""
         current_idx = self.voices.index(current_voice)
